@@ -191,6 +191,10 @@ constructor(
             }.getOrThrow()
             val format = playbackData.format
 
+            val existing = runBlocking(Dispatchers.IO) {
+                database.song(mediaId).first()?.song
+            }
+
             database.query {
                 upsert(
                     FormatEntity(
@@ -208,8 +212,6 @@ constructor(
                 )
 
                 val now = LocalDateTime.now()
-                val existing = database.song(mediaId).first()?.song
-
                 val updatedSong = if (existing != null) {
                     existing.copy(
                         dateDownload = existing.dateDownload ?: now,
@@ -411,8 +413,8 @@ constructor(
                         val treeUri = Uri.parse(customUriStr)
                         val pickedDir = androidx.documentfile.provider.DocumentFile.fromTreeUri(appContext, treeUri)
                         if (pickedDir != null && pickedDir.canWrite()) {
-                            val existing = pickedDir.findFile(fileName)
-                            existing?.delete()
+                            val existingFile = pickedDir.findFile(fileName)
+                            existingFile?.delete()
                             val newFile = pickedDir.createFile(mimeType, fileName)
                             outputUri = newFile?.uri
                         }
