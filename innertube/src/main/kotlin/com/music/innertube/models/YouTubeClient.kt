@@ -103,10 +103,15 @@ data class YouTubeClient(
 
         val IOS = YouTubeClient(
             clientName = "IOS",
-            clientVersion = "21.03.1",
+            clientVersion = "19.45.4",
             clientId = "5",
-            userAgent = "com.google.ios.youtube/21.03.1 (iPhone16,2; U; CPU iOS 18_2 like Mac OS X;)",
-            osVersion = "18.2.22C152",
+            userAgent = "com.google.ios.youtube/19.45.4 (iPhone16,2; U; CPU iOS 18_1 like Mac OS X; en_US)",
+            osName = "iOS",
+            osVersion = "18.1.1.22B91",
+            deviceMake = "Apple",
+            deviceModel = "iPhone16,2",
+            loginSupported = false,
+            useSignatureTimestamp = false
         )
 
         val MOBILE = YouTubeClient(
@@ -118,11 +123,6 @@ data class YouTubeClient(
             useSignatureTimestamp = true
         )
 
-        /**
-         * Video not playable: Paid / Movie / Private / Age-restricted.
-         * Note: The 'Authorization' key must be excluded from the header.
-         * For some reason, PoToken is not required.
-         */
         val ANDROID_NO_SDK = YouTubeClient(
             clientName = "ANDROID",
             clientVersion = "21.03.38",
@@ -135,22 +135,18 @@ data class YouTubeClient(
 
         val ANDROID_VR_NO_AUTH = YouTubeClient(
             clientName = "ANDROID_VR",
-            clientVersion = "1.61.48",
+            clientVersion = "1.65.15",
             clientId = "28",
-            userAgent = "com.google.android.apps.youtube.vr.oculus/1.61.48 (Linux; U; Android 12; en_US; Oculus Quest 3; Build/SQ3A.220605.009.A1; Cronet/132.0.6808.3)",
+            userAgent = "com.google.android.apps.youtube.vr.oculus/1.65.15 (Linux; U; Android 12; en_US; Oculus Quest 3; Build/SQ3A.220605.009.A1; Cronet/132.0.6808.3)",
             loginSupported = false,
             useSignatureTimestamp = false
         )
 
-        /**
-         * Video not playable: Kids / Paid / Movie / Private / Age-restricted.
-         * This client can only be used when logged out.
-         */
         val ANDROID_VR_1_61_48 = YouTubeClient(
             clientName = "ANDROID_VR",
-            clientVersion = "1.61.48",
+            clientVersion = "1.65.15",
             clientId = "28",
-            userAgent = "com.google.android.apps.youtube.vr.oculus/1.61.48 (Linux; U; Android 12; en_US; Quest 3; Build/SQ3A.220605.009.A1; Cronet/132.0.6808.3)",
+            userAgent = "com.google.android.apps.youtube.vr.oculus/1.65.15 (Linux; U; Android 12; en_US; Quest 3; Build/SQ3A.220605.009.A1; Cronet/132.0.6808.3)",
             osName = "Android",
             osVersion = "12",
             deviceMake = "Oculus",
@@ -159,36 +155,29 @@ data class YouTubeClient(
             buildId = "SQ3A.220605.009.A1",
             cronetVersion = "132.0.6808.3",
             packageName = "com.google.android.apps.youtube.vr.oculus",
-            friendlyName = "Android VR 1.61",
+            friendlyName = "Android VR 1.65",
             loginSupported = false,
             useSignatureTimestamp = false
         )
 
-        /**
-         * Uses non adaptive bitrate, which fixes audio stuttering with YT Music.
-         * Does not use AV1.
-         */
         val ANDROID_VR_1_43_32 = YouTubeClient(
             clientName = "ANDROID_VR",
-            clientVersion = "1.43.32",
+            clientVersion = "1.65.15",
             clientId = "28",
-            userAgent = "com.google.android.apps.youtube.vr.oculus/1.43.32 (Linux; U; Android 12; en_US; Quest 3; Build/SQ3A.220605.009.A1; Cronet/107.0.5284.2)",
+            userAgent = "com.google.android.apps.youtube.vr.oculus/1.65.15 (Linux; U; Android 12; en_US; Quest 3; Build/SQ3A.220605.009.A1; Cronet/132.0.6808.3)",
             osName = "Android",
             osVersion = "12",
             deviceMake = "Oculus",
             deviceModel = "Quest 3",
             androidSdkVersion = "32",
             buildId = "SQ3A.220605.009.A1",
-            cronetVersion = "107.0.5284.2",
+            cronetVersion = "132.0.6808.3",
             packageName = "com.google.android.apps.youtube.vr.oculus",
-            friendlyName = "Android VR 1.43",
+            friendlyName = "Android VR Updated",
             loginSupported = false,
             useSignatureTimestamp = false
         )
 
-        /**
-         * Cannot play livestreams and lacks HDR, but can play videos with music and labeled "for children".
-         */
         val ANDROID_CREATOR = YouTubeClient(
             clientName = "ANDROID_CREATOR",
             clientVersion = "25.03.101",
@@ -207,9 +196,6 @@ data class YouTubeClient(
             useSignatureTimestamp = true
         )
 
-        /**
-         * Internal YT client for an unreleased YT client. May stop working at any time.
-         */
         val VISIONOS = YouTubeClient(
             clientName = "VISIONOS",
             clientVersion = "0.1",
@@ -224,17 +210,13 @@ data class YouTubeClient(
             useSignatureTimestamp = false
         )
 
-        /**
-         * The device machine id for the iPad 6th Gen (iPad7,6).
-         * AV1 hardware decoding is not supported.
-         */
         val IPADOS = YouTubeClient(
             clientName = "IOS",
-            clientVersion = "21.03.3",
+            clientVersion = "19.45.4",
             clientId = "5",
-            userAgent = "com.google.ios.youtube/21.03.3 (iPad7,6; U; CPU iPadOS 17_7_10 like Mac OS X; en-US)",
+            userAgent = "com.google.ios.youtube/19.45.4 (iPad7,6; U; CPU iPadOS 18_1 like Mac OS X; en-US)",
             osName = "iPadOS",
-            osVersion = "17.7.10.21H450",
+            osVersion = "18.1.1.22B91",
             deviceMake = "Apple",
             deviceModel = "iPad7,6",
             friendlyName = "iPadOS",
