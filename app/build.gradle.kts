@@ -52,7 +52,7 @@ android {
         buildConfigField("String", "LASTFM_API_KEY", "\"$lastFmKey\"")
         buildConfigField("String", "LASTFM_SECRET", "\"$lastFmSecret\"")
 
-//add nightly build label support
+        //add nightly build label support
         val isNightly = project.hasProperty("nightly") && project.property("nightly") == "true"
         buildConfigField("Boolean", "IS_NIGHTLY", isNightly.toString())
         // CI stamps the workflow run number so a nightly build knows which one it is.
@@ -60,7 +60,6 @@ android {
         val nightlyRun = (project.findProperty("nightlyRun") as String?)?.toIntOrNull() ?: 0
         buildConfigField("int", "NIGHTLY_RUN", nightlyRun.toString())
     }
-    
 
     flavorDimensions += listOf("abi", "variant")
     productFlavors {
@@ -111,12 +110,6 @@ android {
             keyPassword = "android"
         }
         create("release") {
-            // Signing material comes from the environment only. Never hardcode a
-            // fallback password here: this file is published, the keystore is not,
-            // and a leaked release password plus a leaked keystore is an
-            // unrecoverable compromise of the app's signing identity.
-            // Set STORE_PASSWORD / KEY_ALIAS / KEY_PASSWORD before a release build.
-            // local.properties is gitignored, so it is a safe place to keep them.
             storeFile = file("keystore/release.keystore")
             storePassword = localProperties.getProperty("STORE_PASSWORD") ?: System.getenv("STORE_PASSWORD")
             keyAlias = localProperties.getProperty("KEY_ALIAS") ?: System.getenv("KEY_ALIAS")
@@ -136,8 +129,10 @@ android {
             isShrinkResources = true
             isCrunchPngs = false
             isDebuggable = false
-            if (file("keystore/release.keystore").exists()) {
-                signingConfig = signingConfigs.getByName("release")
+            signingConfig = if (file("keystore/release.keystore").exists()) {
+                signingConfigs.getByName("release")
+            } else {
+                signingConfigs.getByName("debug")
             }
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
@@ -329,7 +324,6 @@ dependencies {
     implementation(project(":spotify"))
     implementation(project(":spine"))
 
-
     implementation(libs.ktor.client.core)
     implementation(libs.ktor.client.okhttp)
     implementation(libs.ktor.client.content.negotiation)
@@ -350,18 +344,6 @@ dependencies {
     testImplementation(libs.junit)
 }
 
-
-
-/**
- * `./gradlew bumpVersion -Ppart=patch|minor|major` — the whole release-versioning
- * mechanism. Increments the requested part of version.properties (patch/minor reset
- * the parts below them to 0, same as semver), leaves everything else untouched, and
- * prints the tag to push. Nothing auto-commits or auto-tags: git stays a manual,
- * reviewable step.
- *
- * `part` defaults to "patch" since that's what almost every release here has been —
- * bugfix passes, not new features.
- */
 tasks.register("bumpVersion") {
     group = "versioning"
     description = "Bumps version.properties (patch/minor/major) — the single source for versionCode/versionName."
