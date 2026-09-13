@@ -188,4 +188,9 @@
 ## Jaudiotagger Android compatibility
 -dontwarn java.awt.**
 -dontwarn javax.imageio.**
+-dontwarn javax.swing.**
+-dontwarn org.jaudiotagger.test.**
+-dontnote org.jaudiotagger.**
+-dontwarn org.jaudiotagger.**
 -keep class org.jaudiotagger.** { *; }
+-dontwarn java.lang.instrument.**
