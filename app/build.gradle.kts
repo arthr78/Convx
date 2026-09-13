@@ -242,6 +242,8 @@ tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>().configureEach 
 }
 
 dependencies {
+
+    implementation(libs.jaudiotagger)
     implementation(libs.androidx.material3)
     implementation(libs.guava)
     implementation(libs.coroutines.guava)
