@@ -375,8 +375,9 @@ constructor(
         downloads.value = result
     }
 
-    private fun exportDownloadToStorage(songId: String) {
+   private fun exportDownloadToStorage(songId: String) {
         scope.launch(Dispatchers.IO) {
+            var tempAudioFile: File? = null
             try {
                 val songData = database.song(songId).first()
                 val format = database.format(songId).first()
@@ -402,6 +403,47 @@ constructor(
                     return@launch
                 }
 
+                // 1. Write cached chunks to a temporary local file
+                tempAudioFile = File.createTempFile("export_", ".$extension", appContext.cacheDir)
+                FileOutputStream(tempAudioFile).use { out ->
+                    for (span in spans) {
+                        span.file?.inputStream()?.use { it.copyTo(out) }
+                    }
+                }
+
+                // 2. Embed physical metadata and cover art into the file
+                runCatching {
+                    val audioFile = org.jaudiotagger.audio.AudioFileIO.read(tempAudioFile)
+                    val tag = audioFile.tagOrCreateAndSetDefault
+                    tag.setField(org.jaudiotagger.tag.FieldKey.TITLE, rawTitle)
+                    tag.setField(org.jaudiotagger.tag.FieldKey.ARTIST, artistName)
+                    if (albumName.isNotBlank()) {
+                        tag.setField(org.jaudiotagger.tag.FieldKey.ALBUM, albumName)
+                    }
+
+                    // Download cover artwork bytes and embed
+                    songData?.song?.thumbnailUrl?.let { thumbUrl ->
+                        val req = okhttp3.Request.Builder().url(thumbUrl).build()
+                        val client = okhttp3.OkHttpClient()
+                        client.newCall(req).execute().use { resp ->
+                            if (resp.isSuccessful) {
+                                val artworkBytes = resp.body?.bytes()
+                                if (artworkBytes != null && artworkBytes.isNotEmpty()) {
+                                    val artwork = org.jaudiotagger.tag.images.ArtworkFactory.getNew()
+                                    artwork.binaryData = artworkBytes
+                                    artwork.mimeType = "image/jpeg"
+                                    tag.setField(artwork)
+                                }
+                            }
+                        }
+                    }
+                    audioFile.commit()
+                    Timber.d("Metadata and cover art successfully written into $fileName")
+                }.onFailure {
+                    Timber.w(it, "Failed to embed tags with jaudiotagger; writing raw audio")
+                }
+
+                // 3. Export tagged file to custom directory or default location
                 val customUriStr = appContext.dataStore.data.map {
                     it[androidx.datastore.preferences.core.stringPreferencesKey("download_directory_uri")] ?: ""
                 }.first()
@@ -423,14 +465,13 @@ constructor(
 
                 if (outputUri != null) {
                     appContext.contentResolver.openOutputStream(outputUri)?.use { out ->
-                        for (span in spans) {
-                            span.file?.inputStream()?.use { it.copyTo(out) }
-                        }
+                        tempAudioFile.inputStream().use { it.copyTo(out) }
                     }
-                    Timber.d("Successfully exported $fileName to custom folder: $outputUri")
+                    Timber.d("Successfully exported tagged $fileName to custom folder: $outputUri")
                     return@launch
                 }
 
+                // Fallback: Android MediaStore Music folder
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                     val durationMs = songData?.song?.duration?.takeIf { it > 0 }?.times(1000L)
                         ?: (format?.contentLength ?: 0L)
@@ -439,12 +480,8 @@ constructor(
                         put(MediaStore.Audio.Media.DISPLAY_NAME, fileName)
                         put(MediaStore.Audio.Media.TITLE, rawTitle)
                         put(MediaStore.Audio.Media.ARTIST, artistName)
-                        if (albumName.isNotBlank()) {
-                            put(MediaStore.Audio.Media.ALBUM, albumName)
-                        }
-                        if (durationMs > 0) {
-                            put(MediaStore.Audio.Media.DURATION, durationMs)
-                        }
+                        if (albumName.isNotBlank()) put(MediaStore.Audio.Media.ALBUM, albumName)
+                        if (durationMs > 0) put(MediaStore.Audio.Media.DURATION, durationMs)
                         put(MediaStore.Audio.Media.MIME_TYPE, mimeType)
                         put(MediaStore.Audio.Media.RELATIVE_PATH, "${Environment.DIRECTORY_MUSIC}/Convx")
                         put(MediaStore.Audio.Media.IS_PENDING, 1)
@@ -455,33 +492,28 @@ constructor(
 
                     if (uri != null) {
                         resolver.openOutputStream(uri)?.use { out ->
-                            for (span in spans) {
-                                span.file?.inputStream()?.use { it.copyTo(out) }
-                            }
+                            tempAudioFile.inputStream().use { it.copyTo(out) }
                         }
                         contentValues.clear()
                         contentValues.put(MediaStore.Audio.Media.IS_PENDING, 0)
                         resolver.update(uri, contentValues, null, null)
-                        Timber.d("Exported $fileName to MediaStore default path")
+                        Timber.d("Exported tagged $fileName to MediaStore default path")
                     }
                 } else {
                     val musicDir = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MUSIC), "Convx")
                     if (!musicDir.exists()) musicDir.mkdirs()
                     val targetFile = File(musicDir, fileName)
 
-                    FileOutputStream(targetFile).use { out ->
-                        for (span in spans) {
-                            span.file?.inputStream()?.use { it.copyTo(out) }
-                        }
-                    }
+                    tempAudioFile.copyTo(targetFile, overwrite = true)
                     MediaScannerConnection.scanFile(appContext, arrayOf(targetFile.absolutePath), arrayOf(mimeType), null)
                 }
             } catch (e: Exception) {
                 Timber.e(e, "Failed to export downloaded track $songId to external storage")
+            } finally {
+                tempAudioFile?.delete()
             }
         }
     }
-
     fun getDownload(songId: String): Flow<Download?> = downloads.map { it[songId] }
 
     fun release() {
