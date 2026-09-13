@@ -180,6 +180,10 @@
 }
 -keepclassmembers class com.convx.music.listentogether.** {
     *** Companion;
+    # Jaudiotagger Android compatibility
+-dontwarn java.awt.**
+-dontwarn javax.imageio.**
+-keep class org.jaudiotagger.** { *; }
 }
 -keepclasseswithmembers class com.convx.music.listentogether.** {
     kotlinx.serialization.KSerializer serializer(...);
