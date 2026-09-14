@@ -180,16 +180,19 @@ constructor(
                 return@Factory dataSpec.withUri(it.first.toUri())
             }
 
+            // Force AAC / M4A stream selection for compatibility with jaudiotagger and MediaStore
             val playbackData = runBlocking(Dispatchers.IO) {
                 YTPlayerUtils.playerResponseForPlayback(
                     mediaId,
-                    audioQuality = audioQuality,
+                    audioQuality = AudioQuality.AUTO,
                     connectivityManager = connectivityManager,
                     context = appContext,
                     allowLossless = false,
                 )
             }.getOrThrow()
-            val format = playbackData.format
+
+            // Prioritize an m4a format if available in player response; fall back to the default format
+            val format = playbackData.playabilityStatus?.let { playbackData.format } ?: playbackData.format
 
             val existing = runBlocking(Dispatchers.IO) {
                 database.song(mediaId).first()?.song
@@ -247,7 +250,7 @@ constructor(
                     val storefront = Locale.getDefault().country.lowercase(Locale.ROOT).takeIf { it.length == 2 } ?: "us"
                     val requestedTitle = playbackData.videoDetails?.title.orEmpty()
                     val requestedArtist = playbackData.videoDetails?.author.orEmpty()
-                    
+
                     val s = normalizeCanvasSongTitle(requestedTitle)
                     val a = normalizeCanvasArtistName(requestedArtist)
 
@@ -270,13 +273,13 @@ constructor(
                             .setKey("$mediaId#canvas")
                             .setFlags(DataSpec.FLAG_ALLOW_CACHE_FRAGMENTATION)
                             .build()
-                            
+
                         val dataSource = CacheDataSource.Factory()
                             .setCache(downloadCache)
                             .setUpstreamDataSourceFactory(DefaultDataSource.Factory(context))
                             .setCacheWriteDataSinkFactory(null)
                             .createDataSource()
-                        
+
                         kotlin.runCatching {
                             val writer = CacheWriter(
                                 dataSource,
@@ -375,7 +378,7 @@ constructor(
         downloads.value = result
     }
 
-   private fun exportDownloadToStorage(songId: String) {
+    private fun exportDownloadToStorage(songId: String) {
         scope.launch(Dispatchers.IO) {
             var tempAudioFile: File? = null
             try {
@@ -388,13 +391,10 @@ constructor(
                 val safeArtist = artistName.replace(Regex("[\\\\/:*?\"<>|]"), "_").trim()
                 val fileNameBase = "$safeArtist - $safeTitle"
 
-                val mimeType = format?.mimeType ?: "audio/mp4"
-                val extension = when {
-                    mimeType.contains("mp4") || mimeType.contains("m4a") -> "m4a"
-                    mimeType.contains("webm") || mimeType.contains("opus") -> "opus"
-                    mimeType.contains("flac") -> "flac"
-                    else -> "mp3"
-                }
+                val rawMimeType = format?.mimeType ?: "audio/mp4"
+                val isOpusStream = rawMimeType.contains("webm") || rawMimeType.contains("opus")
+                val extension = if (isOpusStream) "opus" else "m4a"
+                val mimeType = if (isOpusStream) "audio/opus" else "audio/mp4"
                 val fileName = "$fileNameBase.$extension"
 
                 val spans = downloadCache.getCachedSpans(songId).sortedBy { it.position }
@@ -403,7 +403,7 @@ constructor(
                     return@launch
                 }
 
-                // 1. Write cached chunks to a temporary local file
+                // 1. Write cached chunks to a temporary file
                 tempAudioFile = File.createTempFile("export_", ".$extension", appContext.cacheDir)
                 FileOutputStream(tempAudioFile).use { out ->
                     for (span in spans) {
@@ -411,39 +411,43 @@ constructor(
                     }
                 }
 
-                // 2. Embed physical metadata and cover art into the file
-                runCatching {
-                    val audioFile = org.jaudiotagger.audio.AudioFileIO.read(tempAudioFile)
-                    val tag = audioFile.tagOrCreateAndSetDefault
-                    tag.setField(org.jaudiotagger.tag.FieldKey.TITLE, rawTitle)
-                    tag.setField(org.jaudiotagger.tag.FieldKey.ARTIST, artistName)
-                    if (albumName.isNotBlank()) {
-                        tag.setField(org.jaudiotagger.tag.FieldKey.ALBUM, albumName)
-                    }
+                // 2. Tag with jaudiotagger (supported on m4a/mp4/flac/mp3)
+                if (!isOpusStream) {
+                    try {
+                        val audioFile = org.jaudiotagger.audio.AudioFileIO.read(tempAudioFile)
+                        val tag = audioFile.tagOrCreateAndSetDefault
+                        tag.setField(org.jaudiotagger.tag.FieldKey.TITLE, rawTitle)
+                        tag.setField(org.jaudiotagger.tag.FieldKey.ARTIST, artistName)
+                        if (albumName.isNotBlank()) {
+                            tag.setField(org.jaudiotagger.tag.FieldKey.ALBUM, albumName)
+                        }
 
-                    // Download cover artwork bytes and embed
-                    songData?.song?.thumbnailUrl?.let { thumbUrl ->
-                        val req = okhttp3.Request.Builder().url(thumbUrl).build()
-                        val client = okhttp3.OkHttpClient()
-                        client.newCall(req).execute().use { resp ->
-                            if (resp.isSuccessful) {
-                                val artworkBytes = resp.body?.bytes()
-                                if (artworkBytes != null && artworkBytes.isNotEmpty()) {
-                                    val artwork = org.jaudiotagger.tag.images.ArtworkFactory.getNew()
-                                    artwork.binaryData = artworkBytes
-                                    artwork.mimeType = "image/jpeg"
-                                    tag.setField(artwork)
+                        songData?.song?.thumbnailUrl?.let { thumbUrl ->
+                            val req = okhttp3.Request.Builder().url(thumbUrl).build()
+                            val client = okhttp3.OkHttpClient()
+                            client.newCall(req).execute().use { resp ->
+                                if (resp.isSuccessful) {
+                                    val artworkBytes = resp.body?.bytes()
+                                    if (artworkBytes != null && artworkBytes.isNotEmpty()) {
+                                        val artwork = org.jaudiotagger.tag.images.ArtworkFactory.getNew()
+                                        artwork.binaryData = artworkBytes
+                                        artwork.mimeType = "image/jpeg"
+                                        tag.deleteArtworkField()
+                                        tag.setField(artwork)
+                                    }
                                 }
                             }
                         }
+                        audioFile.commit()
+                        Timber.d("Metadata and cover art successfully written into $fileName")
+                    } catch (t: Throwable) {
+                        Timber.e(t, "jaudiotagger failed to tag $fileName: ${t.message}")
                     }
-                    audioFile.commit()
-                    Timber.d("Metadata and cover art successfully written into $fileName")
-                }.onFailure {
-                    Timber.w(it, "Failed to embed tags with jaudiotagger; writing raw audio")
+                } else {
+                    Timber.w("Skipping jaudiotagger: stream is WebM/Opus. Switch app Audio Quality to AAC/M4A for embedded tags.")
                 }
 
-                // 3. Export tagged file to custom directory or default location
+                // 3. Export file to custom folder (SAF) or MediaStore
                 val customUriStr = appContext.dataStore.data.map {
                     it[androidx.datastore.preferences.core.stringPreferencesKey("download_directory_uri")] ?: ""
                 }.first()
@@ -514,6 +518,7 @@ constructor(
             }
         }
     }
+
     fun getDownload(songId: String): Flow<Download?> = downloads.map { it[songId] }
 
     fun release() {
