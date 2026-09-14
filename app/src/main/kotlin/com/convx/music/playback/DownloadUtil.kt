@@ -180,19 +180,16 @@ constructor(
                 return@Factory dataSpec.withUri(it.first.toUri())
             }
 
-            // Force AAC / M4A stream selection for compatibility with jaudiotagger and MediaStore
             val playbackData = runBlocking(Dispatchers.IO) {
                 YTPlayerUtils.playerResponseForPlayback(
                     mediaId,
-                    audioQuality = AudioQuality.AUTO,
+                    audioQuality = audioQuality,
                     connectivityManager = connectivityManager,
                     context = appContext,
                     allowLossless = false,
                 )
             }.getOrThrow()
-
-            // Prioritize an m4a format if available in player response; fall back to the default format
-            val format = playbackData.playabilityStatus?.let { playbackData.format } ?: playbackData.format
+            val format = playbackData.format
 
             val existing = runBlocking(Dispatchers.IO) {
                 database.song(mediaId).first()?.song
@@ -391,8 +388,8 @@ constructor(
                 val safeArtist = artistName.replace(Regex("[\\\\/:*?\"<>|]"), "_").trim()
                 val fileNameBase = "$safeArtist - $safeTitle"
 
-                val rawMimeType = format?.mimeType ?: "audio/mp4"
-                val isOpusStream = rawMimeType.contains("webm") || rawMimeType.contains("opus")
+                val rawMime = format?.mimeType ?: "audio/mp4"
+                val isOpusStream = rawMime.contains("webm") || rawMime.contains("opus")
                 val extension = if (isOpusStream) "opus" else "m4a"
                 val mimeType = if (isOpusStream) "audio/opus" else "audio/mp4"
                 val fileName = "$fileNameBase.$extension"
@@ -403,7 +400,6 @@ constructor(
                     return@launch
                 }
 
-                // 1. Write cached chunks to a temporary file
                 tempAudioFile = File.createTempFile("export_", ".$extension", appContext.cacheDir)
                 FileOutputStream(tempAudioFile).use { out ->
                     for (span in spans) {
@@ -411,7 +407,6 @@ constructor(
                     }
                 }
 
-                // 2. Tag with jaudiotagger (supported on m4a/mp4/flac/mp3)
                 if (!isOpusStream) {
                     try {
                         val audioFile = org.jaudiotagger.audio.AudioFileIO.read(tempAudioFile)
@@ -439,15 +434,12 @@ constructor(
                             }
                         }
                         audioFile.commit()
-                        Timber.d("Metadata and cover art successfully written into $fileName")
+                        Timber.d("Tags and artwork embedded successfully into $fileName")
                     } catch (t: Throwable) {
-                        Timber.e(t, "jaudiotagger failed to tag $fileName: ${t.message}")
+                        Timber.e(t, "Failed to write tags to $extension: ${t.message}")
                     }
-                } else {
-                    Timber.w("Skipping jaudiotagger: stream is WebM/Opus. Switch app Audio Quality to AAC/M4A for embedded tags.")
                 }
 
-                // 3. Export file to custom folder (SAF) or MediaStore
                 val customUriStr = appContext.dataStore.data.map {
                     it[androidx.datastore.preferences.core.stringPreferencesKey("download_directory_uri")] ?: ""
                 }.first()
@@ -475,7 +467,6 @@ constructor(
                     return@launch
                 }
 
-                // Fallback: Android MediaStore Music folder
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                     val durationMs = songData?.song?.duration?.takeIf { it > 0 }?.times(1000L)
                         ?: (format?.contentLength ?: 0L)
